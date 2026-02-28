@@ -1,0 +1,2 @@
+# no external dependencies; uses Python standard library
+# For testing, install pytest: `pip install pytest`

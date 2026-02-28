@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Coin Flip</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin: 0; padding: 0;
+               background-image: url('bg.png'); background-size: cover;
+               background-position: top center; background-attachment: fixed; }
+        #topbar {
+            background: #4da6ff;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px;
+            gap: 12px;
+            position: sticky;
+            top: 0;
+            position: relative; /* for dropdown */
+        }
+        #topbar .stat { font-size: 1.1em; }
+        #resetIcon { margin-left: auto; cursor: pointer; font-size: 1.3em; }
+
+        /* main content area */
+        #mainContent {
+            position: relative;
+            perspective: 1000px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: calc(100vh - 50px);
+            padding: 12px;
+        }
+
+        /* coin */
+        #coin {
+            width: 150px;
+            height: 150px;
+            position: absolute;
+            left: calc(50% - 75px);
+            top: calc(50% - 75px);
+            border-radius: 50%;
+            transform-style: preserve-3d;
+            cursor: pointer;
+        }
+        #coin .face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            backface-visibility: hidden;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 24px; font-weight: bold; background-size: cover; background-position: center;
+        }
+        #coin .front { background-image: url('heads.png'); background-color: #FFD700; color: red; }
+        #coin .back { background-image: url('tails.png'); background-color: gray; color: white; transform: rotateY(180deg); }
+
+        /* control panel */
+        .control-panel { margin: 8px 12px 12px 12px; display:flex; flex-wrap:wrap; gap:8px 12px; justify-content:center; align-items:center; font-size:13px; }
+        .control-panel label { display:flex; align-items:center; gap:8px; background:rgba(68, 68, 68, 0.9); padding:6px 10px; border-radius:8px; }
+        .control-panel input[type=range]{ width:140px; }
+        .control-panel span.val { min-width:36px; text-align:right; display:inline-block; }
+
+        /* red rounded rectangle flip button bottom-center */
+        #flipButton { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: 240px; height: 80px; background: red; border: none; border-radius: 24px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); cursor: pointer; display:flex; align-items:center; justify-content:center; }
+        #flipButton:active { transform: translateX(-50%) scale(0.95); }
+        #flipButton .btn-svg { width:36px; height:36px; display:block; filter: brightness(0) invert(1); }
+
+        #result { font-size: 1.5em; margin: 20px; }
+        /* topbar toggle button for control panel */
+        #panelToggle {
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.18);
+            padding: 6px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        #panelToggle:active { transform: scale(0.98); }
+        .panel-dropdown {
+            position: absolute;
+            top: 48px;
+            left: 8px;
+            z-index: 1200;
+            display: none;
+            background: rgba(238, 236, 236, 0.98);
+            padding: 8px;
+            border-radius: 8px;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+        }
+        .panel-dropdown.open { display: block; }
+    </style>
+</head>
+<body>
+    <header id="topbar">
+        <button id="panelToggle" title="速度控制">速度</button>
+        <div class="panel-dropdown" id="panelDropdown" aria-hidden="true">
+            <div class="control-panel" id="controlPanel">
+                <label>抛起 (ms): <input id="throwDur" type="range" min="200" max="2000" value="480"><span class="val" id="throwDurVal">1000</span></label>
+                <label>空中翻转 (ms): <input id="flipDur" type="range" min="200" max="4000" value="600"><span class="val" id="flipDurVal">500</span></label>
+                <label>落地弹跳 (ms): <input id="bounceDur" type="range" min="100" max="2000" value="750"><span class="val" id="bounceDurVal">500</span></label>
+                <label>呈现 (ms): <input id="revealDur" type="range" min="100" max="1000" value="350"><span class="val" id="revealDurVal">600</span></label>
+            </div>
+        </div>
+        <div class="stat">正 <span id="headsCount">0</span></div>
+        <div class="stat">反 <span id="tailsCount">0</span></div>
+        <div class="stat">总 <span id="totalCount">0</span></div>
+        <div id="resetIcon" title="清零">&#x21bb;</div>
+    </header>
+
+    <div id="mainContent">
+        <div id="coin">
+            <div class="face front"></div>
+            <div class="face back"></div>
+        </div>
+
+        <div id="result"></div>
+
+        <!-- control panel moved to topbar -->
+
+        <button id="flipButton" title="抛掷硬币"><img src="coin.svg" class="btn-svg" alt="抛硬币"></button>
+
+        <!-- sound effects (放置到同目录) -->
+        <audio id="sound-toss" src="toss.wav"></audio>
+        <audio id="sound-bounce" src="bounce.wav"></audio>
+        <audio id="sound-land" src="land.wav"></audio>
+    </div>
+
+    <script>
+        const headsCountElem = document.getElementById('headsCount');
+        const tailsCountElem = document.getElementById('tailsCount');
+        const totalCountElem = document.getElementById('totalCount');
+        const resultElem = document.getElementById('result');
+        const coinElem = document.getElementById('coin');
+        const resetIcon = document.getElementById('resetIcon');
+        const tossSound = document.getElementById('sound-toss');
+        const bounceSound = document.getElementById('sound-bounce');
+        const landSound = document.getElementById('sound-land');
+        const flipButton = document.getElementById('flipButton');
+        const panelToggle = document.getElementById('panelToggle');
+        const panelDropdown = document.getElementById('panelDropdown');
+
+        const throwInput = document.getElementById('throwDur');
+        const flipInput = document.getElementById('flipDur');
+        const bounceInput = document.getElementById('bounceDur');
+        const revealInput = document.getElementById('revealDur');
+        const throwVal = document.getElementById('throwDurVal');
+        const flipVal = document.getElementById('flipDurVal');
+        const bounceVal = document.getElementById('bounceDurVal');
+        const revealVal = document.getElementById('revealDurVal');
+
+        let heads = 0, tails = 0;
+
+        function updateCounts(){ headsCountElem.textContent = heads; tailsCountElem.textContent = tails; totalCountElem.textContent = heads + tails; }
+
+        function doFlipResult(bit){ if(bit===0){ heads++; resultElem.textContent='正'; } else { tails++; resultElem.textContent='反'; } updateCounts(); }
+
+        function animatePromise(el, frames, opts){ return new Promise(resolve=>{ const a = el.animate(frames, opts); a.onfinish = resolve; }); }
+
+        function clampTarget(parentRect, coinSize, flipBtnHeight){ const tx = Math.random() * Math.max(parentRect.width - coinSize, 0); const bottomBuffer = (flipBtnHeight||0) + 24; const safeH = Math.max(parentRect.height - coinSize - bottomBuffer, 0); const ty = Math.random() * safeH; return {tx, ty}; }
+
+        async function flipAnimation(){
+            if(coinElem.classList.contains('flipping')) return;
+            coinElem.classList.add('flipping');
+
+            const throwMs = parseInt(throwInput.value,10);
+            const flipMs = parseInt(flipInput.value,10);
+            const bounceMs = parseInt(bounceInput.value,10);
+            const revealMs = parseInt(revealInput.value,10);
+
+            throwVal.textContent = throwMs; flipVal.textContent = flipMs; bounceVal.textContent = bounceMs; revealVal.textContent = revealMs;
+
+            const parent = coinElem.parentElement; const parentRect = parent.getBoundingClientRect(); const coinSize = coinElem.offsetWidth; const startX = coinElem.offsetLeft; const startY = coinElem.offsetTop;
+            const btnRect = flipButton ? flipButton.getBoundingClientRect() : {height:0};
+            const {tx: targetX, ty: targetY} = clampTarget(parentRect, coinSize, btnRect.height);
+
+            // stage1 抛起
+            try{ tossSound.currentTime = 0; tossSound.play().catch(()=>{}); }catch(e){}
+            const peak = Math.max(120, Math.round(parentRect.height * 0.18));
+            await animatePromise(coinElem, [ {transform:'translate(0px,0px) rotateX(0) rotateY(0)'}, {transform:`translate(0px,-${peak}px) rotateX(40deg) rotateY(80deg)`}], {duration: throwMs, easing:'cubic-bezier(.2,.8,.2,1)'} );
+
+            // stage2 空中翻转并位移
+            await animatePromise(coinElem, [ {transform:`translate(0px,-${peak}px) rotateX(40deg) rotateY(80deg)`}, {transform:`translate(${targetX-startX}px,${targetY-startY}px) rotateX(720deg) rotateY(1440deg)`}], {duration: flipMs, easing:'linear'} );
+
+            // stage3 落地弹跳
+            try{ bounceSound.currentTime = 0; bounceSound.play().catch(()=>{}); }catch(e){}
+            await animatePromise(coinElem, [ {transform:`translate(${targetX-startX}px,${targetY-startY}px) rotateX(720deg) rotateY(1440deg)`}, {transform:`translate(${targetX-startX}px,${targetY-startY-28}px) rotateX(800deg) rotateY(1600deg)`}, {transform:`translate(${targetX-startX}px,${targetY-startY}px) rotateX(820deg) rotateY(1700deg)`}], {duration: bounceMs, easing:'cubic-bezier(.3,1.2,.2,1)'} );
+
+            // stage4 最终呈现
+            const array = new Uint8Array(1); crypto.getRandomValues(array); const bit = array[0] & 1; doFlipResult(bit);
+            try{ landSound.currentTime = 0; landSound.play().catch(()=>{}); }catch(e){}
+            const finalRotateY = bit===0?0:180;
+            await animatePromise(coinElem, [ {transform:`translate(${targetX-startX}px,${targetY-startY}px) rotateX(820deg) rotateY(1700deg)`}, {transform:`translate(${targetX-startX}px,${targetY-startY}px) rotateX(820deg) rotateY(${finalRotateY}deg)`}], {duration: revealMs, easing:'ease-out'} );
+
+            coinElem.style.left = targetX + 'px'; coinElem.style.top = targetY + 'px'; coinElem.style.transform = `rotateY(${finalRotateY}deg)`; coinElem.classList.remove('flipping');
+        }
+
+        function resetCounts(){ heads = 0; tails = 0; resultElem.textContent = ''; coinElem.style.transform='rotateY(0deg)'; coinElem.style.left = 'calc(50% - 75px)'; coinElem.style.top = 'calc(50% - 75px)'; updateCounts(); }
+
+        [throwInput, flipInput, bounceInput, revealInput].forEach(el=>{ el.addEventListener('input', ()=>{ if(el===throwInput) throwVal.textContent = el.value; if(el===flipInput) flipVal.textContent = el.value; if(el===bounceInput) bounceVal.textContent = el.value; if(el===revealInput) revealVal.textContent = el.value; }); });
+
+        coinElem.addEventListener('click', flipAnimation);
+        resetIcon.addEventListener('click', resetCounts);
+        if(flipButton) flipButton.addEventListener('click', flipAnimation);
+        // panel toggle behavior
+        if(panelToggle && panelDropdown){
+            panelToggle.addEventListener('click', (e)=>{
+                e.stopPropagation();
+                const open = panelDropdown.classList.toggle('open');
+                panelDropdown.setAttribute('aria-hidden', !open);
+            });
+            // prevent clicks inside dropdown from closing
+            panelDropdown.addEventListener('click', (e)=>{ e.stopPropagation(); });
+            // click outside closes
+            document.addEventListener('click', ()=>{
+                if(panelDropdown.classList.contains('open')){
+                    panelDropdown.classList.remove('open');
+                    panelDropdown.setAttribute('aria-hidden', 'true');
+                }
+            });
+            // ESC closes
+            document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape'){ panelDropdown.classList.remove('open'); panelDropdown.setAttribute('aria-hidden','true'); } });
+        }
+    </script>
+</body>
+</html>
